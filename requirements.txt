@@ -1,4 +1,7 @@
-
-flask
+Flask
 requests
 python-dotenv
+gspread
+oauth2client
+google-search-results
+serpapi
