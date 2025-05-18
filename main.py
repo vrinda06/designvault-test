@@ -1,64 +1,84 @@
-
 import os
-import requests
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
+from scraper import search_serpapi_inspo
 
 load_dotenv()
 
+# --- Google Sheet Setup ---
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("designvaultgpt-dbcd90c803e4.json", scope)
+client = gspread.authorize(creds)
+sheet = client.open("et__Prime_Design Vault").sheet1
+
+# --- Flask App Setup ---
 app = Flask(__name__)
-
-FIGMA_TOKEN = os.getenv("FIGMA_TOKEN")
-FILE_KEY = os.getenv("FILE_KEY")
-FRAME_NAME = os.getenv("FRAME_NAME")
-
-headers = {
-    "X-Figma-Token": FIGMA_TOKEN
-}
 
 @app.route("/")
 def home():
-    return "✅ Render test is live!"
+    return "✅ DesignVaultGPT is live!"
 
-@app.route("/push-image")
-def push_image():
-    # Step 1: Get file info to find the frame node ID
-    file_url = f"https://api.figma.com/v1/files/{FILE_KEY}"
-    file_data = requests.get(file_url, headers=headers).json()
+@app.route("/query")
+def query_sheet():
+    user_query = request.args.get("ask", "").lower()
+    data = sheet.get_all_records()
+    matched_rows = []
 
-    def find_frame_id(node):
-        if node.get("name") == FRAME_NAME and node.get("type") == "FRAME":
-            return node.get("id")
-        for child in node.get("children", []):
-            found = find_frame_id(child)
-            if found:
-                return found
-        return None
+    for row in data:
+        row_text = " ".join([str(value).lower() for value in row.values()])
+        if all(word in row_text for word in user_query.split()):
+            matched_rows.append(row)
 
-    frame_id = find_frame_id(file_data.get("document", {}))
-    if not frame_id:
-        return jsonify({"error": "Frame not found."}), 404
+    if not matched_rows:
+        return jsonify([{"note": "❌ I couldn’t find anything in the campaign vault for that."}])
 
-    # Step 2: Push a dummy image node to the frame
-    dummy_image_url = "https://via.placeholder.com/600x400.png?text=Test+Image"
-    add_node_url = f"https://api.figma.com/v1/files/{FILE_KEY}/comments"
+    return jsonify(matched_rows)
 
-    payload = {
-        "message": "Test image pushed to frame.",
-        "client_meta": {
-            "x": 100,
-            "y": 100
-        },
-        "comment_id": None
-    }
+@app.route("/generate-inspo")
+def generate_inspo():
+    user_query = request.args.get("ask", "").lower()
+    data = sheet.get_all_records()
+    matched_rows = []
 
-    response = requests.post(add_node_url, headers=headers, json=payload)
+    for row in data:
+        row_text = " ".join([str(value).lower() for value in row.values()])
+        if all(word in row_text for word in user_query.split()):
+            matched_rows.append(row)
 
-    return jsonify({
-        "status": "Image push attempted",
-        "frame_id": frame_id,
-        "figma_response": response.json()
-    })
+    if not matched_rows:
+        return jsonify([{"note": "❌ No inspiration found in the design vault for that term."}])
 
+    motifs = ", ".join({row.get("Motifs Used", "") for row in matched_rows})
+    hooks = ", ".join({row.get("Creative Hook", "") for row in matched_rows})
+    objectives = ", ".join({row.get("Objective", "") for row in matched_rows})
+    notes = ". ".join({row.get("Design Notes", "") for row in matched_rows})
+
+    prompt = f"""
+    Based on past campaigns with the objective: {objectives},
+    and motifs such as {motifs},
+    and creative hooks like: {hooks},
+
+    suggest a new design layout for a campaign titled: {user_query.title()}.
+
+    Include:
+    - Layout structure
+    - Font + Color recommendations
+    - CTA and headline copy
+    - Any animation or visual style ideas
+
+    Past design notes to consider: {notes}
+    """
+
+    return jsonify({"prompt": prompt})
+
+@app.route("/test-freepik")
+def test_freepik():
+    keyword = request.args.get("ask", "holi sale banner")
+    results = search_serpapi_inspo(keyword)
+    return jsonify(results)
+
+# --- ✅ Railway-compatible server launch ---
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
