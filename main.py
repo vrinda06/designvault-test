@@ -13,6 +13,7 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 
 # ✅ Load the service account credentials from Railway variable
 creds_json = os.getenv("GOOGLE_SERVICE_KEY")
+print("GOOGLE_SERVICE_KEY exists:", creds_json is not None)
 creds_dict = json.loads(creds_json)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
