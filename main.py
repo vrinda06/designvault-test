@@ -1,4 +1,5 @@
 import os
+import json
 from flask import Flask, request, jsonify
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -9,10 +10,12 @@ load_dotenv()
 
 # --- Google Sheet Setup ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-import json
-creds_json = os.getenv("GCP_CREDENTIALS_JSON")
+
+# ✅ Load the service account credentials from Railway variable
+creds_json = os.getenv("GOOGLE_SERVICE_KEY")
 creds_dict = json.loads(creds_json)
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+
 client = gspread.authorize(creds)
 sheet = client.open("et__Prime_Design Vault").sheet1
 
